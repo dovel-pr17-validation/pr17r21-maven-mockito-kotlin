@@ -1,0 +1,686 @@
+package test
+
+import com.nhaarman.expect.expect
+import com.nhaarman.expect.expectErrorWithMessage
+import com.nhaarman.expect.fail
+import java.io.PrintStream
+import java.io.Serializable
+import java.util.*
+import kotlin.reflect.KFunction2
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+import org.mockito.Mockito
+import org.mockito.exceptions.verification.WantedButNotInvoked
+import org.mockito.invocation.DescribedInvocation
+import org.mockito.kotlin.UseConstructor.Companion.parameterless
+import org.mockito.kotlin.UseConstructor.Companion.withArguments
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.mockConstruction
+import org.mockito.kotlin.mockExtensionFun
+import org.mockito.kotlin.mockObject
+import org.mockito.kotlin.mockStatic
+import org.mockito.kotlin.spyObject
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import org.mockito.listeners.InvocationListener
+import org.mockito.mock.SerializableMode.BASIC
+import org.mockito.quality.Strictness
+
+class MockingTest : TestBase() {
+
+    private lateinit var propertyInterfaceVariable: MyInterface
+    private lateinit var propertyClassVariable: MyClass
+
+    @Test
+    fun localInterfaceValue() {
+        /* When */
+        val instance: MyInterface = mock()
+
+        /* Then */
+        expect(instance).toNotBeNull()
+    }
+
+    @Test
+    fun propertyInterfaceVariable() {
+        /* When */
+        propertyInterfaceVariable = mock()
+
+        /* Then */
+        expect(propertyInterfaceVariable).toNotBeNull()
+    }
+
+    @Test
+    fun localClassValue() {
+        /* When */
+        val instance: MyClass = mock()
+
+        /* Then */
+        expect(instance).toNotBeNull()
+    }
+
+    @Test
+    fun propertyClassVariable() {
+        /* When */
+        propertyClassVariable = mock()
+
+        /* Then */
+        expect(propertyClassVariable).toNotBeNull()
+    }
+
+    @Test
+    fun untypedVariable() {
+        /* When */
+        val instance = mock<MyClass>()
+
+        expect(instance).toNotBeNull()
+    }
+
+    @Test
+    fun deepStubs() {
+        val cal: Calendar = mock(defaultAnswer = Mockito.RETURNS_DEEP_STUBS)
+        whenever { cal.time.time }.thenReturn(123L)
+        expect(cal.time.time).toBe(123L)
+    }
+
+    @Test
+    fun testMockStubbing_lambda() {
+        /* Given */
+        val mock = mock<Open>() { on { stringResult() } doReturn "A" }
+
+        /* When */
+        val result = mock.stringResult()
+
+        /* Then */
+        expect(result).toBe("A")
+    }
+
+    @Test
+    fun testMockStubbing_normalOverridesLambda() {
+        /* Given */
+        val mock = mock<Open> { on { stringResult() } doReturn "A" }
+        whenever { mock.stringResult() }.thenReturn("B")
+
+        /* When */
+        val result = mock.stringResult()
+
+        /* Then */
+        expect(result).toBe("B")
+    }
+
+    @Test
+    fun mock_withCustomDefaultAnswer_parameterName() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(defaultAnswer = Mockito.RETURNS_SELF)
+
+        /* When */
+        val result = mock.builderMethod()
+
+        /* Then */
+        expect(result).toBe(mock)
+    }
+
+    @Test
+    fun mock_withSettingsAPI_extraInterfaces() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(extraInterfaces = arrayOf(ExtraInterface::class))
+
+        /* Then */
+        expect(mock).toBeInstanceOf<ExtraInterface>()
+    }
+
+    @Test
+    fun mock_withSettingsAPI_name() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(name = "myName")
+
+        /* When */
+        expectErrorWithMessage("myName.stringResult()") on { verify(mock).stringResult() }
+    }
+
+    @Test
+    fun mock_withSettingsAPI_defaultAnswer() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(defaultAnswer = Mockito.RETURNS_MOCKS)
+
+        /* When */
+        val result = mock.nonDefaultReturnType()
+
+        /* Then */
+        expect(result).toNotBeNull()
+    }
+
+    @Test
+    fun mock_withSettingsAPI_serializable() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(serializable = true)
+
+        /* Then */
+        expect(mock).toBeInstanceOf<Serializable>()
+    }
+
+    @Test
+    fun mock_withSettingsAPI_serializableMode() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(serializableMode = BASIC)
+
+        /* Then */
+        expect(mock).toBeInstanceOf<Serializable>()
+    }
+
+    @Test
+    fun mock_withSettingsAPI_verboseLogging() {
+        /* Given */
+        val out = mock<PrintStream>()
+        System.setOut(out)
+        val mock = mock<SynchronousFunctions>(verboseLogging = true)
+
+        /* When, Then */
+        assertThrows<WantedButNotInvoked> { verify(mock).stringResult() }
+        argumentCaptor<DescribedInvocation>().apply {
+            verify(out).println(capture())
+            expect(lastValue.toString()).toBe("synchronousFunctions.stringResult();")
+        }
+    }
+
+    @Test
+    fun mock_withSettingsAPI_invocationListeners() {
+        /* Given */
+        var bool = false
+        val mock =
+            mock<SynchronousFunctions>(
+                invocationListeners = arrayOf(InvocationListener { bool = true })
+            )
+
+        /* When */
+        mock.stringResult()
+
+        /* Then */
+        expect(bool).toHold()
+    }
+
+    @Test
+    fun mock_withSettingsAPI_stubOnly() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(stubOnly = true)
+
+        /* Expect */
+        expectErrorWithMessage("is a stubOnly() mock") on
+            {
+
+                /* When */
+                verify(mock).stringResult()
+            }
+    }
+
+    @Test
+    fun mock_withSettingsAPI_useConstructor() {
+        /* Given */
+        expectErrorWithMessage("Unable to create mock instance of type ") on
+            {
+                mock<ThrowingConstructor>(useConstructor = parameterless()) {}
+            }
+    }
+
+    @Test
+    fun mock_withSettingsAPI_useConstructorWithArguments_failing() {
+        /* Given */
+        expectErrorWithMessage("Unable to create mock instance of type ") on
+            {
+                mock<ThrowingConstructorWithArgument>(useConstructor = withArguments("Test")) {}
+            }
+    }
+
+    @Test
+    fun mock_withSettingsAPI_useConstructorWithArguments() {
+        /* When */
+        val result =
+            mock<NonThrowingConstructorWithArgument>(useConstructor = withArguments("Test")) {}
+
+        /* Then */
+        expect(result).toNotBeNull()
+    }
+
+    @Test
+    fun mock_strictness_default() {
+        /* Given */
+        val session = Mockito.mockitoSession().strictness(Strictness.STRICT_STUBS).startMocking()
+
+        /* When */
+        val result = mock<SynchronousFunctions>()
+        whenever(result.intResult()).thenReturn(42)
+
+        /* Then */
+        expectErrorWithMessage("Unnecessary stubbings detected") on { session.finishMocking() }
+    }
+
+    @Test
+    fun mock_withSettingsAPI_lenient() {
+        /* Given */
+        val session = Mockito.mockitoSession().strictness(Strictness.STRICT_STUBS).startMocking()
+
+        /* When */
+        val result = mock<SynchronousFunctions>(lenient = true)
+        whenever(result.intResult()).thenReturn(42)
+
+        /* Then */
+        // Verify no "Unnecessary stubbings detected" exception
+        session.finishMocking()
+    }
+
+    @Test
+    fun mock_withSettingsAPI_strictness_lenient() {
+        /* Given */
+        val session = Mockito.mockitoSession().strictness(Strictness.STRICT_STUBS).startMocking()
+
+        /* When */
+        val result = mock<SynchronousFunctions>(strictness = Strictness.LENIENT)
+        whenever(result.intResult()).thenReturn(42)
+
+        /* Then */
+        // Verify no "Unnecessary stubbings detected" exception
+        session.finishMocking()
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_extraInterfaces() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(extraInterfaces = arrayOf(ExtraInterface::class)) {}
+
+        /* Then */
+        expect(mock).toBeInstanceOf<ExtraInterface>()
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_name() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(name = "myName") {}
+
+        /* When */
+        expectErrorWithMessage("myName.stringResult()") on { verify(mock).stringResult() }
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPIAndStubbing_name() {
+        /* Given */
+        val mock =
+            mock<SynchronousFunctions>(name = "myName") {
+                on { nullableStringResult() } doReturn "foo"
+            }
+
+        /* When */
+        val result = mock.nullableStringResult()
+
+        /* Then */
+        expect(result).toBe("foo")
+    }
+
+    @Test
+    fun mockSuspendFunction_withClosedBooleanReturn_name() = runTest {
+        /* Given */
+        val mock =
+            mock<SuspendFunctions>(name = "myName") {
+                on { closedBooleanResult(any()) } doReturn true
+            }
+
+        /* When */
+        val result = mock.closedBooleanResult(Closed())
+
+        /* Then */
+        expect(result).toBe(true)
+    }
+
+    @Test
+    fun mockSuspendFunction_withClassClosedBooleanReturn_name() = runTest {
+        /* Given */
+        val mock =
+            mock<SuspendFunctions>(name = "myName") {
+                on { classClosedBooleanResult(any()) } doReturn true
+            }
+
+        /* When */
+        val result = mock.classClosedBooleanResult(Closed::class.java)
+
+        /* Then */
+        expect(result).toBe(true)
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_defaultAnswer() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(defaultAnswer = Mockito.RETURNS_MOCKS) {}
+
+        /* When */
+        val result = mock.nonDefaultReturnType()
+
+        /* Then */
+        expect(result).toNotBeNull()
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_serializable() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(serializable = true) {}
+
+        /* Then */
+        expect(mock).toBeInstanceOf<Serializable>()
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_serializableMode() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(serializableMode = BASIC) {}
+
+        /* Then */
+        expect(mock).toBeInstanceOf<Serializable>()
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_verboseLogging() {
+        /* Given */
+        val out = mock<PrintStream>()
+        System.setOut(out)
+        val mock = mock<SynchronousFunctions>(verboseLogging = true) {}
+
+        try {
+            /* When */
+            verify(mock).stringResult()
+            fail("Expected an exception")
+        } catch (_: WantedButNotInvoked) {
+            /* Then */
+            argumentCaptor<DescribedInvocation>().apply {
+                verify(out).println(capture())
+                expect(lastValue.toString()).toBe("synchronousFunctions.stringResult();")
+            }
+        }
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_invocationListeners() {
+        /* Given */
+        var bool = false
+        val mock =
+            mock<SynchronousFunctions>(
+                invocationListeners = arrayOf(InvocationListener { bool = true })
+            ) {}
+
+        /* When */
+        mock.stringResult()
+
+        /* Then */
+        expect(bool).toHold()
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_stubOnly() {
+        /* Given */
+        val mock = mock<SynchronousFunctions>(stubOnly = true) {}
+
+        /* Expect */
+        expectErrorWithMessage("is a stubOnly() mock") on
+            {
+
+                /* When */
+                verify(mock).stringResult()
+            }
+    }
+
+    @Test
+    fun mockStubbing_withSettingsAPI_useConstructor() {
+        /* Given */
+        expectErrorWithMessage("Unable to create mock instance of type ") on
+            {
+                mock<ThrowingConstructor>(useConstructor = parameterless()) {}
+            }
+    }
+
+    @Test
+    fun mockStatic_stubbing() {
+        mockStatic<SomeObject>().use { mockedStatic ->
+            mockedStatic.whenever { SomeObject.aStaticMethodReturningString() }.thenReturn("Hello")
+
+            expect(SomeObject.aStaticMethodReturningString()).toBe("Hello")
+
+            mockedStatic.verify { SomeObject.aStaticMethodReturningString() }
+        }
+    }
+
+    @Test
+    fun mockStatic_defaultAnswer_stubbing() {
+        mockStatic<SomeObject>(defaultAnswer = Mockito.CALLS_REAL_METHODS).use {
+            expect(SomeObject.aStaticMethodReturningString()).toBe("Some Value")
+        }
+    }
+
+    @Test
+    fun mockConstruction_basic() {
+        mockConstruction<Open>().use { mockedConstruction ->
+            val open = Open()
+
+            expect(mockedConstruction.constructed()).toHaveSize(1)
+            expect(mockedConstruction.constructed().first()).toBeTheSameAs(open)
+        }
+    }
+
+    @Test
+    fun mockConstruction_withInitializer() {
+        mockConstruction<Open> { mock, _ -> whenever { mock.stringResult() }.thenReturn("Hello") }
+            .use {
+                val open = Open()
+
+                expect(open.stringResult()).toBe("Hello")
+            }
+    }
+
+    @Test
+    fun mockObject_basic() {
+        mockObject(MyObject).use {
+            whenever(MyObject.hello()).thenReturn("stubbed")
+
+            expect(MyObject.hello()).toBe("stubbed")
+        }
+    }
+
+    @Test
+    fun mockObject_KStubbing() {
+        mockObject(MyObject) { on { hello() } doReturn "stubbed" }
+            .use { expect(MyObject.hello()).toBe("stubbed") }
+    }
+
+    @Test
+    fun mockObject_JvmStatic_method() {
+        mockObject(MyObject).use {
+            whenever(MyObject.helloStatic()).thenReturn("stubbed_via_mockObject")
+
+            expect(MyObject.helloStatic()).toBe("stubbed_via_mockObject")
+        }
+    }
+
+    @Test
+    fun mockObject_mixed_regular_and_JvmStatic_methods() {
+        mockObject(MyObject).use {
+            whenever(MyObject.hello()).thenReturn("regular_stubbed")
+            whenever(MyObject.helloStatic()).thenReturn("static_stubbed")
+
+            expect(MyObject.hello()).toBe("regular_stubbed")
+            expect(MyObject.helloStatic()).toBe("static_stubbed")
+            expect(it.isMockingStatic).toBe(true)
+        }
+    }
+
+    @Test
+    fun mockObject_without_JvmStatic_does_not_use_mockStatic() {
+        mockObject(MyObjectNoStatic).use { expect(it.isMockingStatic).toBe(false) }
+    }
+
+    @Test
+    fun mockCompanionObject_basic() {
+        mockObject(MyClassWithCompanion.Companion).use {
+            val myClassWithCompanionMock = mock<MyClassWithCompanion>()
+            whenever(MyClassWithCompanion.create()).thenReturn(myClassWithCompanionMock)
+
+            expect(MyClassWithCompanion.create()).toBeTheSameAs(myClassWithCompanionMock)
+        }
+    }
+
+    @Test
+    fun mockCompanionObject_KStubbing() {
+        val myClassWithCompanionMock = mock<MyClassWithCompanion>()
+        mockObject(MyClassWithCompanion.Companion) {
+                on { create() } doReturn myClassWithCompanionMock
+            }
+            .use { expect(MyClassWithCompanion.create()).toBeTheSameAs(myClassWithCompanionMock) }
+    }
+
+    @Test
+    fun mockCompanionObject_JvmStatic_method() {
+        mockObject(MyClassWithCompanion.Companion).use {
+            val myClassWithCompanionMock = mock<MyClassWithCompanion>()
+            whenever(MyClassWithCompanion.createStatic()).thenReturn(myClassWithCompanionMock)
+
+            expect(MyClassWithCompanion.createStatic()).toBeTheSameAs(myClassWithCompanionMock)
+        }
+    }
+
+    @Test
+    fun mockObject_nonObjectArgument() {
+        expectErrorWithMessage("is not an object or companion object") on
+            {
+                val m = MyClass()
+                mockObject(m)
+            }
+    }
+
+    @Test
+    fun spyObject_callsRealMethodByDefault() {
+        spyObject(MyObject).use { expect(MyObject.hello()).toBe("unstubbed") }
+    }
+
+    @Test
+    fun spyObject_stubbedMethodReturnsStub() {
+        spyObject(MyObject).use {
+            whenever(MyObject.hello()).thenReturn("stubbed")
+
+            expect(MyObject.hello()).toBe("stubbed")
+        }
+    }
+
+    @Test
+    fun spyObject_KStubbing() {
+        spyObject(MyObject) { on { hello() } doReturn "stubbed" }
+            .use { expect(MyObject.hello()).toBe("stubbed") }
+    }
+
+    @Test
+    fun spyObject_JvmStatic_callsRealMethodByDefault() {
+        spyObject(MyObject).use { expect(MyObject.helloStatic()).toBe("static_unstubbed") }
+    }
+
+    @Test
+    fun spyObject_JvmStatic_stubbedMethodReturnsStub() {
+        spyObject(MyObject).use {
+            whenever(MyObject.helloStatic()).thenReturn("static_stubbed")
+
+            expect(MyObject.helloStatic()).toBe("static_stubbed")
+        }
+    }
+
+    @Test
+    fun spyObject_mixed_stubbed_and_real_methods() {
+        spyObject(MyObject).use {
+            whenever(MyObject.hello()).thenReturn("stubbed")
+
+            expect(MyObject.hello()).toBe("stubbed")
+            expect(MyObject.helloStatic()).toBe("static_unstubbed")
+        }
+    }
+
+    @Test
+    fun spyObject_nonObjectArgument() {
+        expectErrorWithMessage("is not an object or companion object") on
+            {
+                val m = MyClass()
+                spyObject(m)
+            }
+    }
+
+    @Test
+    fun spyCompanionObject_callsRealMethodByDefault() {
+        spyObject(MyClassWithCompanion.Companion).use {
+            expect(MyClassWithCompanion.create()).toNotBeNull()
+        }
+    }
+
+    @Test
+    fun mockExtensionFun_returnsMockedValue() {
+        mockExtensionFun(String::isEqualTo).use {
+            whenever("a".isEqualTo("b")).thenReturn(true)
+
+            expect("a".isEqualTo("b")).toBe(true)
+        }
+    }
+
+    @Test
+    fun mockExtensionFun_withMatchers_returnsMockedValue() {
+        mockExtensionFun(String::isEqualTo).use {
+            whenever(any<String>().isEqualTo(eq("b"))).thenReturn(true)
+
+            expect("a".isEqualTo("b")).toBe(true)
+            expect("a".isEqualTo("c")).toBe(false)
+        }
+    }
+
+    @Test
+    fun mockExtensionFun_overloaded_returnsMockedValue() {
+        val ref: KFunction2<String, String, Boolean> = String::isHello
+        mockExtensionFun(ref).use {
+            whenever("test".isHello("sad")).thenReturn(true)
+
+            expect("test".isHello("sad")).toBe(true)
+        }
+    }
+
+    @Test
+    fun mockExtensionFun_nonExtensionFunction_throwsIllegalArgument() {
+        expectErrorWithMessage("has no extension receiver") on
+            {
+                mockExtensionFun(Open::stringResult)
+            }
+    }
+
+    @Test
+    fun memberExtensionFunction_mockedByCreatingMockHost() {
+        val foo = mock<Foo>()
+        val bar = Bar()
+        whenever(with(foo) { bar.foobar() }).thenReturn("mocked")
+
+        expect(with(foo) { bar.foobar() }).toBe("mocked")
+    }
+
+    object MyObjectNoStatic {
+        fun hello(): String = "no_static"
+    }
+
+    object MyObject {
+        fun hello(): String = "unstubbed"
+
+        @JvmStatic fun helloStatic(): String = "static_unstubbed"
+    }
+
+    class MyClassWithCompanion {
+        companion object {
+            fun create(): MyClassWithCompanion = MyClassWithCompanion()
+
+            // This will generate a static method, but it is *only* accessible to Java.
+            // Calling Kotlin code still calls the instance method on the Companion class instance.
+            @JvmStatic fun createStatic(): MyClassWithCompanion = MyClassWithCompanion()
+        }
+    }
+
+    private interface MyInterface
+
+    private open class MyClass
+}

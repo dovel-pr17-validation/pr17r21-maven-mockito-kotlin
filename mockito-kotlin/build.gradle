@@ -1,0 +1,50 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+plugins {
+    id "org.jetbrains.kotlin.jvm"
+    id "org.jetbrains.dokka"
+    id "mockito-kotlin.library-conventions"
+}
+apply from: '../gradle/publishing.gradle'
+
+group = 'org.mockito.kotlin'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly "org.jetbrains.kotlin:kotlin-stdlib"
+    compileOnly 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2'
+    implementation "org.jetbrains.kotlin:kotlin-reflect:2.1.20"
+
+    api "org.mockito:mockito-core:5.23.0"
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.nhaarman:expect.kt:1.0.1'
+
+    testImplementation "org.jetbrains.kotlin:kotlin-stdlib"
+    testImplementation "org.jetbrains.kotlin:kotlin-test"
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2'
+
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+}
+
+dokkaHtml.configure {
+    outputDirectory.set(layout.buildDirectory.dir("javadoc"))
+
+    dokkaSourceSets {
+        named("main") {
+            localDirectory.set(file("src/main/kotlin"))
+            remoteUrl.set(new URL("https://github.com/nhaarman/mockito-kotlin/tree/master/mockito-kotlin/src/main/kotlin"))
+            remoteLineSuffix.set("#L")
+        }
+    }
+}
+
+kotlin {
+    jvmToolchain(11) // This handles Kotlin compilation, Java compilation, and Gradle attributes automatically
+}
+
+javadoc.dependsOn dokkaHtml
