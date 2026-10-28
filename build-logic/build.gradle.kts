@@ -4,5 +4,5 @@ plugins {
 }
 
 dependencies {
-    implementation("com.diffplug.spotless:com.diffplug.spotless.gradle.plugin:8.1.0")
+    implementation("com.diffplug.spotless:com.diffplug.spotless.gradle.plugin:8.10.4")
 }
